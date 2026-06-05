@@ -1,4 +1,4 @@
-name: Build GGUF ZeroCopy v4 APK
+Name: Build GGUF ZeroCopy v4 APK
 
 on:
   push:
@@ -28,21 +28,15 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: gradle
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: '9.3.1'
+        uses: gradle/actions/setup-gradle@v3
+        # This single action handles caching for dependencies and wrappers automatically.
 
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            ccache
+          sudo apt-get install -y build-essential cmake ninja-build ccache
           echo "=== Build tools installed ==="
 
       - name: Install Android NDK and Build Tools
@@ -56,60 +50,33 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/28.2.13676358" >> $GITHUB_ENV
           echo "=== Android tools installed ==="
 
-      - name: Enable ccache for C++ compilation
-        run: |
-          sudo apt-get install -y ccache
-          echo "CC=ccache gcc" >> $GITHUB_ENV
-          echo "CXX=ccache g++" >> $GITHUB_ENV
-          mkdir -p ~/.ccache
-          echo "max_size = 2.0G" > ~/.ccache/ccache.conf
-
-      - name: Cache ccache files
-        uses: actions/cache@v4
+      - name: Setup and Configure ccache
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          path: ~/.ccache
-          key: ccache-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            ccache-${{ runner.os }}-
-
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
-
-      - name: Cache CMake/llama.cpp build
-        uses: actions/cache@v4
-        with:
-          path: |
-            app/.cxx
-            ~/.cmake/packages
-          key: cmake-llama-${{ runner.os }}-${{ github.sha }}
-          restore-keys: cmake-llama-${{ runner.os }}-
+          key: ccache-android-${{ runner.os }}
+          max-size: 2G
 
       - name: Build Debug APK
         run: |
           export GRADLE_USER_HOME=$HOME/.gradle
           chmod +x gradlew
-          # Optimize memory usage without swap
+          
+          # Force CMake to pass NDK's Clang calls through ccache 
+          # -j2 caps parallel compilation to match the runner's 2 physical/virtual cores to avoid Metaspace crashes
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
             --build-cache \
             -Pandroid.ndkVersion=28.2.13676358 \
-            -Porg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:+ParallelRefProcEnabled" \
+            -Porg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=384m -XX:+UseG1GC" \
+            -Pandroid.externalNativeBuild.cmake.arguments="-DCMAKE_C_COMPILER_LAUNCHER=ccache,-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" \
             -Pandroid.defaults.buildfeatures.cmakejobs=2 \
-            -Pandroid.useDeprecatedNdk=false \
             --warning-mode=all \
             2>&1 | tee build.log
         env:
           ANDROID_NDK: ${{ env.ANDROID_NDK }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
           CCACHE_COMPRESS: 1
-          CCACHE_MAXSIZE: 2G
 
       - name: Check if APK was created
         if: always()
@@ -136,7 +103,6 @@ jobs:
           echo "APK_NAME=$(basename $DST)" >> $GITHUB_ENV
           echo "=== APK Info ==="
           ls -lh "$DST"
-          du -sh "$DST"
 
       - name: Upload APK artifact
         if: success()
@@ -157,7 +123,6 @@ jobs:
           name: "GGUF ZeroCopy v4 – ${{ github.event.inputs.release_tag || github.ref_name }}"
           body: |
             ## GGUF ZeroCopy Engine v4
-
             ### What's new in v4
             - 📱 **Full chat UI** – message bubbles with timestamps and t/s stats
             - 🛑 **Stop/Abort button** – cancel inference mid-stream
@@ -182,3 +147,4 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
+
