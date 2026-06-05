@@ -1,4 +1,4 @@
-Name: Build GGUF ZeroCopy v4 APK
+name: Build GGUF ZeroCopy v4 APK
 
 on:
   push:
@@ -147,4 +147,3 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
-
