@@ -17,8 +17,8 @@ android {
 
         externalNativeBuild {
             cmake {
-                cppFlags("-std=c++17 -O3 -flto -march=armv8.4a+dotprod")
-                cFlags  ("-O3 -flto -march=armv8.4a+dotprod")
+                cppFlags("-std=c++17 -O3 -march=armv8.4a+dotprod")
+                cFlags  ("-O3 -march=armv8.4a+dotprod")
                 arguments(
                     "-DANDROID_STL=c++_shared",
                     "-DGGML_VULKAN=ON",
