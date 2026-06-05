@@ -28,12 +28,12 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'  # ✅ NEW: Enable Gradle caching
+          cache: 'gradle'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          cache-read-only: false  # ✅ NEW: Allow cache writes
+          cache-read-only: false
 
       - name: Cache Android SDK
         uses: actions/cache@v4
@@ -46,6 +46,16 @@ jobs:
           key: android-sdk-${{ runner.os }}-v1
           restore-keys: |
             android-sdk-${{ runner.os }}-
+
+      - name: Cache NDK build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/.cxx
+            .gradle/ndk-build-cache
+          key: ndk-build-${{ runner.os }}-${{ hashFiles('app/src/main/cpp/**') }}
+          restore-keys: |
+            ndk-build-${{ runner.os }}-
 
       - name: Install system dependencies
         run: |
@@ -75,22 +85,24 @@ jobs:
           export GRADLE_USER_HOME=$HOME/.gradle
           chmod +x gradlew
           
-          # ✅ OPTIMIZED: Better memory settings + parallel builds
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
             --build-cache \
             --parallel \
+            --max-workers=4 \
             -Pandroid.ndkVersion=28.2.13676358 \
-            -Porg.gradle.jvmargs="-Xmx1g -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:G1HeapRegionSize=16m" \
-            -Pandroid.externalNativeBuild.cmake.arguments="-DCMAKE_C_COMPILER_LAUNCHER=ccache,-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" \
-            -Pandroid.defaults.buildfeatures.cmakejobs=2 \
+            -Porg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m -XX:+UseG1GC -XX:G1HeapRegionSize=16m" \
+            -Pandroid.externalNativeBuild.cmake.arguments="-DCMAKE_C_COMPILER_LAUNCHER=ccache,-DCMAKE_CXX_COMPILER_LAUNCHER=ccache,-DCMAKE_BUILD_TYPE=Release" \
+            -Pandroid.defaults.buildfeatures.cmakejobs=4 \
+            -Pandroid.enableProfilePublish=false \
             --warning-mode=all \
             2>&1 | tee build.log
         env:
           ANDROID_NDK: ${{ env.ANDROID_NDK }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
           CCACHE_COMPRESS: 1
+          CCACHE_SLOPPINESS: time_macros
 
       - name: Check if APK was created
         if: always()
