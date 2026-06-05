@@ -93,7 +93,7 @@ jobs:
       - name: Build Debug APK
         run: |
           export GRADLE_USER_HOME=$HOME/.gradle
-          
+          chmod +x gradlew
           # Optimize memory usage without swap
           ./gradlew assembleDebug \
             --no-daemon \
