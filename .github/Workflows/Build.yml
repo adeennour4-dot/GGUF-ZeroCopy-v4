@@ -1,0 +1,154 @@
+name: Build GGUF ZeroCopy v4 APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag for GitHub Release (leave blank to skip release)'
+        required: false
+        default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: gradle
+
+      - name: Install build tools (coreutils, findutils, ninja)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y coreutils findutils ninja-build
+          uname --version
+          xargs --version
+          ninja --version
+
+      - name: Fix Gradle wrapper (use Gradle 9.3.1)
+        run: |
+          rm -f gradlew gradle/wrapper/gradle-wrapper.jar
+          mkdir -p gradle/wrapper
+          curl -fsSL -o gradlew https://raw.githubusercontent.com/gradle/gradle/v9.3.1/gradlew
+          curl -fsSL -o gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v9.3.1/gradle/wrapper/gradle-wrapper.jar
+          chmod +x gradlew
+          cat > gradle/wrapper/gradle-wrapper.properties <<EOF
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+
+      - name: Install NDK 28 and CMake
+        run: |
+          echo "y" | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/28.2.13676358"      >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/28.2.13676358" >> $GITHUB_ENV
+
+      - name: Install glslc (Vulkan shader compiler)
+        run: |
+          NDK_GLSLC="$ANDROID_SDK_ROOT/ndk/28.2.13676358/shader-tools/linux-x86_64/glslc"
+          if [ -f "$NDK_GLSLC" ]; then
+            sudo ln -sf "$NDK_GLSLC" /usr/local/bin/glslc
+          else
+            sudo apt-get install -y glslang-tools shaderc
+          fi
+          glslc --version
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Cache llama.cpp FetchContent
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/.cxx
+            ~/.cmake/packages
+          key: llama-cpp-${{ runner.os }}-b5576-arm64-v4
+          restore-keys: llama-cpp-${{ runner.os }}-
+
+      - name: Build Debug APK
+        run: |
+          export PATH=/usr/bin:$PATH
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            -Pandroid.ndkVersion=28.2.13676358 \
+            -Porg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m"
+        env:
+          ANDROID_NDK:      ${{ env.ANDROID_NDK }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          PATH: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358/shader-tools/linux-x86_64:${{ env.PATH }}
+
+      - name: Rename APK
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          DST="app/build/outputs/apk/debug/GGUF-ZeroCopy-v4-debug-${TIMESTAMP}.apk"
+          cp "$SRC" "$DST"
+          echo "APK_PATH=$DST"      >> $GITHUB_ENV
+          echo "APK_NAME=$(basename $DST)" >> $GITHUB_ENV
+          echo "APK size: $(du -sh $DST | cut -f1)"
+          unzip -l "$DST" | grep "\.so" || true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GGUF-ZeroCopy-v4-debug
+          path: app/build/outputs/apk/debug/GGUF-ZeroCopy-v4-debug-*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: >
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '') ||
+          startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: "GGUF ZeroCopy v4 — ${{ github.event.inputs.release_tag || github.ref_name }}"
+          body: |
+            ## GGUF ZeroCopy Engine v4
+
+            ### What's new in v4
+            - 💬 **Full chat UI** — message bubbles with timestamps and t/s stats
+            - ⏹ **Stop/Abort button** — cancel inference mid-stream
+            - ⚡ **Benchmark tab** — PP/TG tokens/sec speed test
+            - ℹ **Model Info tab** — arch, param count, embedding size, vocab size
+            - 📋 **Copy chat** — export full conversation to clipboard
+            - 🔁 **Repeat penalties** — repeat / frequency / presence penalty settings
+            - 📊 **KV cache usage** — live fill% indicator in header
+            - 🎨 **Redesigned UI** — tabbed layout, modern chat bubbles, dark navy theme
+            - 📦 **512 KB ring buffer** — handles much longer responses
+            - 🔢 **Token counter** — live tokens/sec and total token count
+          files: app/build/outputs/apk/debug/GGUF-ZeroCopy-v4-debug-*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
