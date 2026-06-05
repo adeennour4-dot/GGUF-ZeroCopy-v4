@@ -1,4 +1,4 @@
-```yaml
+
 name: Build GGUF ZeroCopy v4 APK
 
 on:
@@ -183,4 +183,3 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
-```
