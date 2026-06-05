@@ -1,4 +1,3 @@
-
 name: Build GGUF ZeroCopy v4 APK
 
 on:
@@ -79,7 +78,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Cache CMake/llama.cpp build
@@ -129,7 +128,7 @@ jobs:
       - name: Rename APK with timestamp
         if: success()
         run: |
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
           SRC="app/build/outputs/apk/debug/app-debug.apk"
           DST="app/build/outputs/apk/debug/GGUF-ZeroCopy-v4-debug-${TIMESTAMP}.apk"
           mv "$SRC" "$DST"
@@ -149,27 +148,27 @@ jobs:
 
       - name: Create GitHub Release
         if: >
-          success() &&
-          ((github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '') ||
-           startsWith(github.ref, 'refs/tags/v'))
+          success() && (
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '') ||
+          startsWith(github.ref, 'refs/tags/v'))
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
-          name: "GGUF ZeroCopy v4 — ${{ github.event.inputs.release_tag || github.ref_name }}"
+          name: "GGUF ZeroCopy v4 – ${{ github.event.inputs.release_tag || github.ref_name }}"
           body: |
             ## GGUF ZeroCopy Engine v4
 
             ### What's new in v4
-            - 💬 **Full chat UI** — message bubbles with timestamps and t/s stats
-            - ⏹ **Stop/Abort button** — cancel inference mid-stream
-            - ⚡ **Benchmark tab** — PP/TG tokens/sec speed test
-            - ℹ **Model Info tab** — arch, param count, embedding size, vocab size
-            - 📋 **Copy chat** — export full conversation to clipboard
-            - 🔁 **Repeat penalties** — repeat / frequency / presence penalty settings
-            - 📊 **KV cache usage** — live fill% indicator in header
-            - 🎨 **Redesigned UI** — tabbed layout, modern chat bubbles, dark navy theme
-            - 📦 **512 KB ring buffer** — handles much longer responses
-            - 🔢 **Token counter** — live tokens/sec and total token count
+            - 📱 **Full chat UI** – message bubbles with timestamps and t/s stats
+            - 🛑 **Stop/Abort button** – cancel inference mid-stream
+            - ⚡ **Benchmark tab** – PP/TG tokens/sec speed test
+            - 🔧 **Model Info tab** – arch, param count, embedding size, vocab size
+            - 📋 **Copy chat** – export full conversation to clipboard
+            - 🔁 **Repeat penalties** – repeat / frequency / presence penalty settings
+            - 🧠 **KV cache usage** – live fill% indicator in header
+            - 🎨 **Redesigned UI** – tabbed layout, modern chat bubbles, dark navy theme
+            - 🔊 **512 KB ring buffer** – handles much longer responses
+            - 🔢 **Token counter** – live tokens/sec and total token count
           files: app/build/outputs/apk/debug/GGUF-ZeroCopy-v4-debug-*.apk
           draft: false
           prerelease: false
