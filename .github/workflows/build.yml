@@ -30,13 +30,12 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Install build tools (coreutils, findutils, ninja)
+      - name: Install coreutils and findutils
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y coreutils findutils ninja-build
+          sudo apt-get install -y coreutils findutils
           uname --version
           xargs --version
-          ninja --version
 
       - name: Fix Gradle wrapper (use Gradle 9.3.1)
         run: |
@@ -88,17 +87,24 @@ jobs:
           path: |
             app/.cxx
             ~/.cmake/packages
-          key: llama-cpp-${{ runner.os }}-b5576-arm64-v4
+          key: llama-cpp-${{ runner.os }}-b5576-arm64-v4-fixed
           restore-keys: llama-cpp-${{ runner.os }}-
 
-      - name: Build Debug APK
+      - name: Build Debug APK (with memory‑saving flags)
         run: |
           export PATH=/usr/bin:$PATH
+          # Increase swap space to avoid OOM during C++ compilation
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          # Build with reduced parallelism and memory‑sensitive options
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
             -Pandroid.ndkVersion=28.2.13676358 \
-            -Porg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m"
+            -Porg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
+            -Pandroid.defaults.buildfeatures.cmakejobs=2
         env:
           ANDROID_NDK:      ${{ env.ANDROID_NDK }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
@@ -150,5 +156,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
